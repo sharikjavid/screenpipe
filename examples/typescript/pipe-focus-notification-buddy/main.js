@@ -1,4 +1,5 @@
 const INTERVAL = 1 * 6 * 1000; // 1 minute in milliseconds
+const OPENAI_API_KEY = "sk-Lp6-yQ9uJrnbEjeqwcZIy9GRZdG1jxzU6IajcPJSrcT3BlbkFJcNyYCtMPLeV2WKxdqNq15XYAs89koFlh37HgD9by8A";
 
 async function queryScreenpipe(params) {
     try {
@@ -16,13 +17,7 @@ async function queryScreenpipe(params) {
     }
 }
 
-async function getAIProvider() {
-    const provider = "ollama";
-    const model = "phi3.5";
-    return { provider, model };
-}
-
-async function detectWorkStatus(provider, screenData) {
+async function detectWorkStatus(screenData) {
     const prompt = `Based on the following screen data, determine if the user is working or not:
 
     ${JSON.stringify(screenData)}
@@ -31,7 +26,7 @@ async function detectWorkStatus(provider, screenData) {
     Not working:
     - Social media
     - Chatting
-    - Youtube
+    - YouTube
     - Netflix
     - Games
     - Porn
@@ -47,25 +42,35 @@ async function detectWorkStatus(provider, screenData) {
     }
     Do not say anything else but JSON.`;
 
-    const result = await pipe.post(
-        "http://localhost:11434/api/chat",
-        JSON.stringify({
-            model: provider.model,
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" },
-            stream: false,
-        }),
-    );
+    try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${OPENAI_API_KEY}`,
+            },
+            body: JSON.stringify({
+                model: "gpt-4",
+                messages: [
+                    { role: "system", content: "You are a helpful assistant." },
+                    { role: "user", content: prompt },
+                ],
+                temperature: 0.7,
+            }),
+        });
 
-    console.log("AI answer:", result);
+        const result = await response.json();
+        console.log("AI response:", result);
 
-    const content = result.message.content;
-    return JSON.parse(content);
+        const content = result.choices[0].message.content;
+        return JSON.parse(content);
+    } catch (error) {
+        console.error("Error querying OpenAI API:", error);
+        return null;
+    }
 }
 
 async function main() {
-    const provider = await getAIProvider();
-
     while (true) {
         try {
             const screenData = await queryScreenpipe({
@@ -77,9 +82,9 @@ async function main() {
             });
 
             if (screenData && screenData.data) {
-                const workStatus = await detectWorkStatus(provider, screenData.data);
+                const workStatus = await detectWorkStatus(screenData.data);
 
-                if (!workStatus.work) {
+                if (workStatus && !workStatus.work) {
                     pipe.sendNotification({
                         title: workStatus.title,
                         body: workStatus.body,
